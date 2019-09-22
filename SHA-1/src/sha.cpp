@@ -18,9 +18,6 @@ uint32_t H2 = 0x98BADCFE;
 uint32_t H3 = 0x10325476;
 uint32_t H4 = 0xC3D2E1F0;
 
-// 80 32-bit numbers
-uint8_t W[80][4];
-
 struct Wt{
 	union {
 		struct {
@@ -69,15 +66,6 @@ int main() {
 
 	// For each chunk
 	// ===================================
-	
-
-
-	for (int i = 0; i < 16; i++) {
-		for (int j = 0; j < 4; j++) {
-			W[i][j] = chunk[i * 4 + j];
-		}
-	}
-
 	for (int i = 0; i < 16; i++) {
 		W2[i] = { chunk[i * 4 + 3], chunk[i * 4 + 2], chunk[i * 4 + 1], chunk[i * 4] };
 	}
@@ -85,14 +73,7 @@ int main() {
 	for (int i = 16; i < 80; i++) {
 		W2[i].wNumber = (uint32_t)S(1, (W2[i - 3].wNumber ^ W2[i - 8].wNumber ^ W2[i - 14].wNumber ^ W2[i - 16].wNumber));
 	}
-
-	for (int i = 16; i < 80; i++) {
-		for (int j = 0; j < 4; j++) {
-			W[i][j] = ((uint32_t)W[i - 3][j] ^ (uint32_t)W[i - 8][j] ^ (uint32_t)W[i - 14][j] ^ (uint32_t)W[i - 16][j]);
-		}
-		*W[i] = (uint32_t)S(1, (uint32_t)*W[i]);
-	}
-
+	
 	uint32_t a = H0;
 	uint32_t b = H1;
 	uint32_t c = H2;
@@ -120,15 +101,13 @@ int main() {
 		}
 
 		
-		auto res = (W[i][0] << 24) | (W[i][1] << 16) | (W[i][2] << 8) | (W[i][3]);
-		auto res2 = (W2[i].wNumber);
+		auto res = (W2[i].wNumber);
 		uint32_t temp = S(5, a) + f + e + k + (uint32_t)res;
-		uint32_t temp2 = S(5, a) + f + e + k + (uint32_t)res2;
 		e = d;
 		d = c;
 		c = S(30, b);
 		b = a;
-		a = temp2;
+		a = temp;
 	}
 
 	H0 = H0 + a;
