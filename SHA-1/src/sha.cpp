@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stdio.h>
 #include <iostream>
 #include <memory.h>
@@ -10,7 +12,7 @@ uint8_t chunk[64];
 uint8_t *lastWrite = chunk;
 
 // To byte characters is used
-const char message[] = "Hash function is working!";
+const char message[] = "We're good people";
 
 uint32_t H0 = 0x67452301;
 uint32_t H1 = 0xEFCDAB89;
@@ -18,7 +20,7 @@ uint32_t H2 = 0x98BADCFE;
 uint32_t H3 = 0x10325476;
 uint32_t H4 = 0xC3D2E1F0;
 
-struct Wt{
+struct Wt {
 	union {
 		struct {
 			uint8_t b1;
@@ -30,7 +32,7 @@ struct Wt{
 	};
 };
 
-Wt W2[80];
+Wt W[80];
 
 void AddPaddingToMessage() {
 	// DEBUG
@@ -39,8 +41,9 @@ void AddPaddingToMessage() {
 	// TODO: DEBUG
 	memcpy(lastWrite, message, ArrayCount(message) - 1);
 	lastWrite += ArrayCount(message) - 1;
-	
+
 	// Appending with 1
+	// NOTE: Max size of the message is 440 bits because atleast 1 byte can be written in the memory byte in the end
 	*lastWrite = (char)0b10000000;
 	lastWrite += 1;
 
@@ -60,20 +63,162 @@ void AddPaddingToMessage() {
 	}
 }
 
+Message msg;
+
+bool ReadFile(uint32_t *hash, FILE *fileHandle) {
+	// Reset message to read new message
+	uint8_t *bufferWrite = msg.data;
+	msg.size = 0;
+	
+	// Feed chunk of data with previous round hash
+	if (hash) {
+		for (int i = 0; i < 4; i++) {
+			msg.data[i * sizeof(uint32_t)] = hash[i];
+			msg.data[i * sizeof(uint32_t) + 1] = hash[i] >> (8);
+			msg.data[i * sizeof(uint32_t) + 2] = hash[i] >> (16);
+			msg.data[i * sizeof(uint32_t) + 3] = hash[i] >> (24);
+			msg.size += sizeof(uint32_t);
+		}
+	}
+
+	while (1) {
+		uint8_t dataByte = fgetc(fileHandle);
+	
+		if (dataByte == (uint8_t)EOF) {
+			return true;
+		}
+
+		*bufferWrite = dataByte;
+		bufferWrite += 1;
+		msg.size += 1;
+		
+		// 55 is the max length of the message 
+		// [message] [1000 0000] [length of the message]
+		// (55bytes)    (8bits)          (64bits)
+		if (msg.size == 55) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void AddPaddingToMsg() {
+	uint8_t *lastWrite = (msg.data + msg.size);
+	
+	// Add 1 as a byte
+	*(msg.data + msg.size) = 0x80; // 0b1000_0000
+	lastWrite++;
+
+	// Evaluate amount of bytes we need to zero
+	uint64_t bytesToZero = 55 - msg.size;
+	for (int i = 0; i < bytesToZero; i++) {
+		*lastWrite = 0x00;
+		lastWrite++;
+	}
+
+	// Append size of the message
+	// TODO: is there any better solution?
+	uint64_t messageSizeInBits = msg.size * 8;
+	for (int i = 0; i < 8; i++) {
+		msg.data[63 - i] = (uint8_t)(messageSizeInBits >> (8 * i));
+	}
+}
+
 #define S(n, x) (((x) << n) | ((x) >> (32 - n)))
-int main() {
+int main(int argc, char **argv) {
+	FILE *fileHandle = fopen("file.txt", "r");
+	if (!fileHandle) return 0;
+
+	/*
+		1. Read 56 bytes from the file and write data to the buffer
+		2. Return from the function and process read data
+		3. Repeat until all data is read
+		4. Process the last chunk of data
+		5. Call the function again and return 0 signaling that nothing left to read
+	*/
+	bool isFullyRead = false;
+	uint32_t *hash = NULL;
+	while (1) {
+		isFullyRead = ReadFile(hash, fileHandle);
+		if (!hash) {
+			hash = (uint32_t*)malloc(sizeof(uint32_t) * 5);
+			if (!hash) return 0;
+		}
+
+		AddPaddingToMsg();
+
+		// Process chunk of data
+		for (int i = 0; i < 16; i++) {
+			W[i] = { msg.data[i * 4 + 3], msg.data[i * 4 + 2], msg.data[i * 4 + 1], msg.data[i * 4] };
+		}
+
+		for (int i = 16; i < 80; i++) {
+			W[i].wNumber = (uint32_t)S(1, (W[i - 3].wNumber ^ W[i - 8].wNumber ^ W[i - 14].wNumber ^ W[i - 16].wNumber));
+		}
+
+		uint32_t a = H0;
+		uint32_t b = H1;
+		uint32_t c = H2;
+		uint32_t d = H3;
+		uint32_t e = H4;
+
+		// Main loop
+		uint32_t f, k;
+
+		for (int i = 0; i < 80; i++) {
+			if (i >= 0 && i < 20) {
+				f = (b & c) | ((~b) & d);
+				k = 0x5A827999;
+			} else if (i >= 20 && i < 40) {
+				f = b ^ c ^ d;
+				k = 0x6ED9EBA1;
+			} else if (i >= 40 && i < 60) {
+				f = (b & c) | (b & d) | (c & d);
+				k = 0x8F1BBCDC;
+			} else if (i >= 60 && i < 80) {
+				f = b ^ c ^ d;
+				k = 0xCA62C1D6;
+			}
+
+			uint32_t temp = S(5, a) + f + e + k + W[i].wNumber;
+			e = d;
+			d = c;
+			c = S(30, b);
+			b = a;
+			a = temp;
+		}
+
+		H0 = H0 + a;
+		H1 = H1 + b;
+		H2 = H2 + c;
+		H3 = H3 + d;
+		H4 = H4 + e;
+
+		hash[0] = H0;
+		hash[1] = H1;
+		hash[2] = H2;
+		hash[3] = H3;
+		hash[4] = H4;
+
+		printf("%x %x %x %x %x\n", hash[0], hash[1], hash[2], hash[3], hash[4]);
+
+		if (isFullyRead) break;
+	}
+
+#if 0
 	AddPaddingToMessage();
 
 	// For each chunk
 	// ===================================
 	for (int i = 0; i < 16; i++) {
-		W2[i] = { chunk[i * 4 + 3], chunk[i * 4 + 2], chunk[i * 4 + 1], chunk[i * 4] };
+		W[i] = { chunk[i * 4 + 3], chunk[i * 4 + 2], chunk[i * 4 + 1], chunk[i * 4] };
 	}
 
 	for (int i = 16; i < 80; i++) {
-		W2[i].wNumber = (uint32_t)S(1, (W2[i - 3].wNumber ^ W2[i - 8].wNumber ^ W2[i - 14].wNumber ^ W2[i - 16].wNumber));
+		W[i].wNumber = (uint32_t)S(1, (W[i - 3].wNumber ^ W[i - 8].wNumber ^ W[i - 14].wNumber ^ W[i - 16].wNumber));
 	}
-	
+
 	uint32_t a = H0;
 	uint32_t b = H1;
 	uint32_t c = H2;
@@ -100,9 +245,7 @@ int main() {
 			k = 0xCA62C1D6;
 		}
 
-		
-		auto res = (W2[i].wNumber);
-		uint32_t temp = S(5, a) + f + e + k + (uint32_t)res;
+		uint32_t temp = S(5, a) + f + e + k + W[i].wNumber;
 		e = d;
 		d = c;
 		c = S(30, b);
@@ -124,6 +267,8 @@ int main() {
 	// ===================================
 
 	printf("%x %x %x %x %x", hash[0], hash[1], hash[2], hash[3], hash[4]);
+#endif
+	
 	std::cin.get();
 	return 0;
 }
