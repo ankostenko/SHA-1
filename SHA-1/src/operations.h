@@ -7,4 +7,5 @@
 struct Message {
 	uint8_t data[64];
 	uint64_t size;
+	int currentSize;
 };
