@@ -71,9 +71,9 @@ bool ReadFile(uint32_t *hash, FILE *fileHandle) {
 	msg.currentSize = 0;
 
 	while (1) {
-		uint8_t dataByte = fgetc(fileHandle);
+		int dataByte = fgetc(fileHandle);
 	
-		if (dataByte == (uint8_t)EOF) {
+		if (dataByte == EOF) {
 			return true;
 		}
 	
