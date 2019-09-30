@@ -132,9 +132,6 @@
   <ItemGroup>
     <ClCompile Include="src\sha.cpp" />
   </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\operations.h" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

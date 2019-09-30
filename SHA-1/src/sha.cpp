@@ -1,3 +1,5 @@
+#define DEBUG_BUILD 0
+
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <stdio.h>
@@ -5,20 +7,15 @@
 #include <memory.h>
 #include <stdint.h>
 
-#include "operations.h"
+#include <chrono>
 
-// 512-bit chunk
-uint8_t chunk[64];
-uint8_t *lastWrite = chunk;
+#define S(n, x) (((x) << n) | ((x) >> (32 - n)))
 
-// To byte characters is used
-const char message[] = "We're good people";
-
-uint32_t H0 = 0x67452301;
-uint32_t H1 = 0xEFCDAB89;
-uint32_t H2 = 0x98BADCFE;
-uint32_t H3 = 0x10325476;
-uint32_t H4 = 0xC3D2E1F0;
+struct Message {
+	uint8_t data[64];
+	uint64_t size;
+	int currentSize;
+};
 
 struct Wt {
 	union {
@@ -32,40 +29,18 @@ struct Wt {
 	};
 };
 
+uint32_t H0 = 0x67452301;
+uint32_t H1 = 0xEFCDAB89;
+uint32_t H2 = 0x98BADCFE;
+uint32_t H3 = 0x10325476;
+uint32_t H4 = 0xC3D2E1F0;
+
+
 Wt W[80];
-
-void AddPaddingToMessage() {
-	// DEBUG
-	memset(chunk, 0xFFFF, ArrayCount(chunk));
-
-	// TODO: DEBUG
-	memcpy(lastWrite, message, ArrayCount(message) - 1);
-	lastWrite += ArrayCount(message) - 1;
-
-	// Appending with 1
-	// NOTE: Max size of the message is 440 bits because atleast 1 byte can be written in the memory byte in the end
-	*lastWrite = (char)0b10000000;
-	lastWrite += 1;
-
-	// Zero message until 448 bit = 56 bytes
-	int toWriteByte = (chunk + 56) - lastWrite;
-	for (int i = 0; i < toWriteByte; i++) {
-		*lastWrite = 0x00;
-		lastWrite += 1;
-	}
-
-	// Append a length of the message
-	// TODO: check size of the message
-	uint64_t messageSize = (ArrayCount(message) - 1) * 8;
-	// I'm gonna take each byte of the size and OR them with each byte of the chunk from right to left
-	for (int i = 0; i < 8; i++) {
-		chunk[63 - i] = (uint8_t)(messageSize >> 8 * i);
-	}
-}
 
 Message msg;
 
-bool ReadFile(uint32_t *hash, FILE *fileHandle) {
+bool ReadFile(FILE *fileHandle) {
 	// Reset bufferWrite to read new message
 	uint8_t *bufferWrite = msg.data;
 	msg.currentSize = 0;
@@ -116,44 +91,37 @@ void AddOnePadding(uint8_t *lastWrite) {
 	lastWrite++;
 }
 
-void AddPaddingToMsg() {
-	uint8_t *lastWrite = (msg.data + msg.currentSize);
-
-	// Add 1 as a byte
-	*(msg.data + msg.currentSize) = 0x80; // 0b1000_0000
-	lastWrite++;
-
-	AddZeroPadding(lastWrite);
-}
-
-#define S(n, x) (((x) << n) | ((x) >> (32 - n)))
 int main(int argc, char **argv) {
 	if (argc == 1) {
 		printf("Input path to a file\n");
-		return 0;
-	}
-	FILE *fileHandle = fopen(argv[1], "rb");
-	if (!fileHandle) {
-		printf("Cannot open file!\n");
+#if DEBUG_BUILD
+		std::cin.get();
+#endif
 		return 0;
 	}
 
-	/*
-		1. Read up to 64 bytes from the file and write data to the buffer
-		2. Return from the function and process read data
-		3. Repeat until all data is read
-		4. Process the last chunk of data
-		5. Call the function again and return 0 signaling that nothing left to read
-	*/
+	FILE *fileHandle = fopen(argv[1], "rb");
+	if (!fileHandle) {
+		printf("Cannot open file!\n");
+	
+#if DEBUG_BUILD
+		std::cin.get();
+#endif
+		return 0;
+	}
+
 	bool isFullyRead = false;
-	uint32_t *hash = NULL;
+	uint32_t hash[5];
 	while (1) {
 		memset(msg.data, 0, 64);
-		isFullyRead = ReadFile(hash, fileHandle);
-		if (!hash) {
-			hash = (uint32_t*)malloc(sizeof(uint32_t) * 5);
-			if (!hash) return 0;
-		}
+		/*
+			1. Read up to 64 bytes from the file and write data to the buffer
+			2. Return from the function and process read data
+			3. Repeat until all data is read
+			4. Process the last chunk of data
+			5. Call the function again and return 0 signaling that nothing left to read
+		*/
+		isFullyRead = ReadFile(fileHandle);
 
 		// We can put 1 and a length of the message
 		if ((msg.currentSize < (64 - 9)) && isFullyRead) {
@@ -233,6 +201,10 @@ process:
 	}
 
 	printf("%x %x %x %x %x\n", hash[0], hash[1], hash[2], hash[3], hash[4]);
+	
+#if DEBUG_BUILD
 	std::cin.get();
+#endif
+	
 	return 0;
 }
